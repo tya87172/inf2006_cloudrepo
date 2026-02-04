@@ -84,3 +84,93 @@ def get_seasonality(vehicle_class, start_year, end_year, aggregation):
 @app.get("/", response_class=HTMLResponse)
 def index():
     return (STATIC_DIR / "index.html").read_text()
+
+import numpy as np
+
+
+@app.get("/premium")
+def get_premium_analysis(
+    vehicle_class: str = Query("ALL"),                 # default ALL categories
+    window: int = Query(6, ge=1),
+    x_axis_mode: Literal["Year", "Month"] = "Year",
+    start_year: int | None = Query(None),
+    end_year: int | None = Query(None),
+):
+    # Build dynamic WHERE clause so 'ALL' and optional years are supported
+    params = []
+    where_clauses = []
+
+    if vehicle_class and vehicle_class.upper() != "ALL":
+        where_clauses.append("vehicle_class = ?")
+        params.append(vehicle_class)
+
+    if start_year is not None:
+        where_clauses.append("CAST(strftime('%Y', month_dt) AS INTEGER) >= ?")
+        params.append(start_year)
+
+    if end_year is not None:
+        where_clauses.append("CAST(strftime('%Y', month_dt) AS INTEGER) <= ?")
+        params.append(end_year)
+
+    where = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+
+    query = f"""
+        SELECT month_dt, quota, premium, vehicle_class
+        FROM coe_bids
+        {where}
+        ORDER BY month_dt
+    """
+    params = tuple(params)
+
+    with sqlite3.connect(DB_PATH) as conn:
+        df = pd.read_sql_query(query, conn, params=params)
+
+    if df.empty:
+        return {"data": [], "count": 0}
+
+    # Convert types safely
+    df["month_dt"] = pd.to_datetime(df["month_dt"], errors="coerce")
+    df["premium"] = pd.to_numeric(df["premium"].astype(str).str.replace(",", ""), errors="coerce")
+
+    # Remove bad rows
+    df = df.dropna(subset=["month_dt", "premium"])
+
+    df["year"] = df["month_dt"].dt.year
+    df["month_name"] = df["month_dt"].dt.month_name()
+
+    # ==========================
+    # Grouping based on x_axis_mode
+    # ==========================
+    if x_axis_mode == "Year":
+        grouped = df.groupby("year", as_index=False)["premium"].mean()
+        grouped["x_axis"] = grouped["year"]
+        grouped["x_label"] = grouped["year"].astype(str)
+
+    else:  # Month mode (Jan-Dec grouped together across all years)
+        grouped = df.groupby("month_name", as_index=False)["premium"].mean()
+
+        month_order = [
+            "January", "February", "March", "April", "May", "June",
+            "July", "August", "September", "October", "November", "December"
+        ]
+        grouped = grouped.set_index("month_name").reindex(month_order).reset_index()
+
+        grouped["x_axis"] = grouped["month_name"]
+        grouped["x_label"] = grouped["month_name"].str[:3]   # Jan, Feb, Mar...
+
+    # Moving average
+    grouped["moving_avg"] = grouped["premium"].rolling(window=window).mean()
+
+    # ✅ Replace NaN/inf so JSON works
+    grouped = grouped.replace([np.nan, np.inf, -np.inf], None)
+
+    payload = grouped[["x_axis", "x_label", "premium", "moving_avg"]].to_dict(orient="records")
+    return {
+        "vehicle_class": vehicle_class,
+        "window": window,
+        "x_axis_mode": x_axis_mode,
+        "data": payload,
+        "count": len(payload),
+    }
+
+
