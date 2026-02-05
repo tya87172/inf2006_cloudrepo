@@ -1,0 +1,237 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>COE Analysis</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+      crossorigin="anonymous"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <script src="https://cdn.jsdelivr.net/npm/echarts@6.0.0/dist/echarts.min.js"></script>
+    <style>
+      body {
+        font-family: "Space Grotesk", system-ui, sans-serif;
+        background: radial-gradient(circle at top, #f4f7ff, #ffffff 55%);
+      }
+      .chart-container {
+        width: 100%;
+        height: 400px;
+      }
+      .page-header {
+        letter-spacing: -0.5px;
+      }
+    </style>
+  </head>
+  <body class="py-4">
+    <div class="container">
+      <div class="mb-4">
+        <h1 class="page-header fw-bold">COE Data Analysis</h1>
+        <p class="text-muted mb-0">
+          Explore COE price distributions, statistical spread, and supply-price relationships.
+        </p>
+      </div>
+      <p>
+        <a href="/static/index.html">View Seasonality</a> |
+        <a href="/static/premium.html">View Premium Prices</a>
+      </p>
+
+      <div class="card shadow-sm border-0 mb-4">
+        <div class="card-body">
+          <div class="row g-3 align-items-end">
+            <div class="col-12 col-md-3">
+              <label class="form-label">Vehicle Class</label>
+              <select id="vehicleClass" class="form-select">
+                <option value="ALL">All Categories</option>
+                <option>Category A</option>
+                <option>Category B</option>
+                <option>Category C</option>
+                <option>Category D</option>
+                <option>Category E</option>
+              </select>
+            </div>
+            <div class="col-6 col-md-2">
+              <label class="form-label">Start Year</label>
+              <input id="startYear" class="form-control" type="number" value="2010" />
+            </div>
+            <div class="col-6 col-md-2">
+              <label class="form-label">End Year</label>
+              <input id="endYear" class="form-control" type="number" value="2025" />
+            </div>
+            <div class="col-12 col-md-2 d-grid">
+              <button id="loadBtn" class="btn btn-primary">Load Analysis</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Distribution Chart (Histogram) -->
+      <div class="card shadow-sm border-0 mb-4">
+        <div class="card-body">
+          <h5 class="card-title">Distribution of COE Prices</h5>
+          <p class="text-muted small">Shows the frequency distribution of premium prices - is it bell-shaped or skewed?</p>
+          <div id="histogramChart" class="chart-container"></div>
+        </div>
+      </div>
+
+      <!-- Scatter Plot -->
+      <div class="card shadow-sm border-0 mb-4">
+        <div class="card-body">
+          <h5 class="card-title">Correlation: Supply (Quota) vs Price</h5>
+          <p class="text-muted small">Scatter plot showing the relationship between quota (supply) and premium price.</p>
+          <div id="scatterChart" class="chart-container"></div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const histogramChart = echarts.init(document.getElementById("histogramChart"));
+      const scatterChart = echarts.init(document.getElementById("scatterChart"));
+
+      const categoryColors = {
+        "Category A": "#5470c6",
+        "Category B": "#91cc75",
+        "Category C": "#fac858",
+        "Category D": "#ee6666",
+        "Category E": "#73c0de"
+      };
+
+      async function loadData() {
+        const vehicleClass = document.getElementById("vehicleClass").value;
+        const startYear = document.getElementById("startYear").value;
+        const endYear = document.getElementById("endYear").value;
+
+        const url = `/analysis?vehicle_class=${encodeURIComponent(vehicleClass)}&start_year=${startYear}&end_year=${endYear}`;
+        const res = await fetch(url);
+        const json = await res.json();
+
+        renderHistogram(json.distribution);
+        renderScatter(json.scatter);
+      }
+
+      function renderHistogram(data) {
+        // Clear previous chart
+        histogramChart.clear();
+
+        // Create histogram bins
+        const binCount = 30;
+        const min = Math.min(...data);
+        const max = Math.max(...data);
+        const binWidth = (max - min) / binCount;
+
+        const bins = new Array(binCount).fill(0);
+        const binLabels = [];
+
+        for (let i = 0; i < binCount; i++) {
+          const binStart = min + i * binWidth;
+          const binEnd = binStart + binWidth;
+          binLabels.push(`$${Math.round(binStart / 1000)}k`);
+        }
+
+        data.forEach(value => {
+          const binIndex = Math.min(Math.floor((value - min) / binWidth), binCount - 1);
+          bins[binIndex]++;
+        });
+
+        histogramChart.setOption({
+          tooltip: {
+            trigger: "axis",
+            formatter: function(params) {
+              const idx = params[0].dataIndex;
+              const binStart = min + idx * binWidth;
+              const binEnd = binStart + binWidth;
+              return `$${Math.round(binStart).toLocaleString()} - $${Math.round(binEnd).toLocaleString()}<br/>Count: ${params[0].value}`;
+            }
+          },
+          xAxis: {
+            type: "category",
+            data: binLabels,
+            name: "Premium Price",
+            axisLabel: { rotate: 45 }
+          },
+          yAxis: {
+            type: "value",
+            name: "Frequency"
+          },
+          series: [{
+            type: "bar",
+            data: bins,
+            itemStyle: { color: "#5470c6" },
+            barWidth: "90%"
+          }],
+          grid: { bottom: 80 }
+        });
+      }
+
+      function renderScatter(data) {
+        // Clear the chart first to remove old series
+        scatterChart.clear();
+
+        // Group data by vehicle class
+        const seriesData = {};
+        data.forEach(d => {
+          const vc = d.vehicle_class;
+          if (!seriesData[vc]) {
+            seriesData[vc] = [];
+          }
+          seriesData[vc].push([d.quota, d.premium]);
+        });
+
+        const categories = Object.keys(seriesData).sort();
+        const series = categories.map(vc => ({
+          name: vc,
+          type: "scatter",
+          data: seriesData[vc],
+          symbolSize: 8,
+          itemStyle: {
+            color: categoryColors[vc] || "#999",
+            opacity: 0.6
+          }
+        }));
+
+        scatterChart.setOption({
+          tooltip: {
+            trigger: "item",
+            formatter: function(params) {
+              return `${params.seriesName}<br/>Quota: ${params.data[0].toLocaleString()}<br/>Premium: $${params.data[1].toLocaleString()}`;
+            }
+          },
+          legend: {
+            data: categories,
+            top: 0
+          },
+          xAxis: {
+            type: "value",
+            name: "Quota (Supply)",
+            nameLocation: "middle",
+            nameGap: 30
+          },
+          yAxis: {
+            type: "value",
+            name: "Premium Price ($)"
+          },
+          series: series,
+          grid: { top: 60 }
+        });
+      }
+
+      // Handle window resize
+      window.addEventListener("resize", function() {
+        histogramChart.resize();
+        scatterChart.resize();
+      });
+
+      document.getElementById("loadBtn").addEventListener("click", loadData);
+      loadData();
+    </script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"
+      integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI"
+      crossorigin="anonymous"
+    ></script>
+  </body>
+</html>

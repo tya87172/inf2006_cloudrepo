@@ -88,6 +88,68 @@ def index():
 import numpy as np
 
 
+@app.get("/analysis")
+def get_analysis_data(
+    vehicle_class: str = Query("ALL"),
+    start_year: int | None = Query(None),
+    end_year: int | None = Query(None),
+):
+    """
+    Returns data for three types of analysis:
+    1. Distribution (histogram) - premium values for histogram
+    2. Box plot - premium statistics by vehicle class
+    3. Scatter - quota vs premium relationship
+    """
+    params = []
+    where_clauses = []
+
+    if vehicle_class and vehicle_class.upper() != "ALL":
+        where_clauses.append("vehicle_class = ?")
+        params.append(vehicle_class)
+
+    if start_year is not None:
+        where_clauses.append("CAST(strftime('%Y', month_dt) AS INTEGER) >= ?")
+        params.append(start_year)
+
+    if end_year is not None:
+        where_clauses.append("CAST(strftime('%Y', month_dt) AS INTEGER) <= ?")
+        params.append(end_year)
+
+    where = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+
+    query = f"""
+        SELECT month_dt, quota, premium, vehicle_class
+        FROM coe_bids
+        {where}
+        ORDER BY month_dt
+    """
+    params = tuple(params)
+
+    with sqlite3.connect(DB_PATH) as conn:
+        df = pd.read_sql_query(query, conn, params=params)
+
+    if df.empty:
+        return {"distribution": [], "scatter": [], "count": 0}
+
+    # Clean data
+    df["premium"] = pd.to_numeric(df["premium"].astype(str).str.replace(",", ""), errors="coerce")
+    df["quota"] = pd.to_numeric(df["quota"].astype(str).str.replace(",", ""), errors="coerce")
+    df = df.dropna(subset=["premium", "quota"])
+
+    # 1. Distribution data (all premium values for histogram)
+    distribution_data = df["premium"].tolist()
+
+    # 2. Scatter data (quota vs premium with vehicle class)
+    scatter_data = df[["quota", "premium", "vehicle_class"]].to_dict(orient="records")
+
+    return {
+        "vehicle_class": vehicle_class,
+        "distribution": distribution_data,
+        "scatter": scatter_data,
+        "count": len(df),
+    }
+
+
 @app.get("/premium")
 def get_premium_analysis(
     vehicle_class: str = Query("ALL"),                 # default ALL categories
