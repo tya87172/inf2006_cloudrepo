@@ -2,7 +2,7 @@ name: EC2 Deployment
 
 on:
   push:
-    branches: [ main ] # Trigger on push to main branch
+    branches: [ test ] # Trigger on push to main branch
 
 jobs:
   deploy:
@@ -20,4 +20,5 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             cd /home/ec2-user/project
-            git pull origin main
+            git checkout test
+            git pull origin test
