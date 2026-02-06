@@ -1,0 +1,6 @@
+### GET request to example server
+GET https://examples.http-client.intellij.net/get
+    ?generated-in=PyCharm
+
+### GET request to seasonality
+GET http://127.0.0.1:8000/seasonality?vehicle_class=Category%20A&start_year=2010&end_year=2019&aggregation=mean

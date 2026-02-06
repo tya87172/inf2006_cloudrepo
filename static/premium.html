@@ -1,0 +1,120 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>COE Moving Average</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@6.0.0/dist/echarts.min.js"></script>
+    <style>
+      body { font-family: Arial, sans-serif; margin: 24px; }
+      .controls { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+      label { display: flex; flex-direction: column; font-size: 14px; }
+      #maChart { width: 100%; height: 420px; }
+    </style>
+  </head>
+  <body>
+    <h2>COE Moving Average (Premium)</h2>
+    <p>
+      <a href="/static/index.html">View Seasonality</a> |
+      <a href="/static/analysis.html">View Analysis</a>
+    </p>
+
+    <div class="controls">
+      <label>Category
+        <select id="vehicleClass">
+          <option>ALL</option>
+          <option>Category A</option>
+          <option>Category B</option>
+          <option>Category C</option>
+          <option>Category D</option>
+        </select>
+      </label>
+      <label>Window
+        <input id="window" type="number" value="6" min="1" />
+      </label>
+      <label>X-Axis
+        <select id="xaxis"><option>Year</option><option>Month</option></select>
+      </label>
+      <label>Start Year
+        <input id="startYear" type="number" value="2010" />
+      </label>
+      <label>End Year
+        <input id="endYear" type="number" value="2019" />
+      </label>
+      <button id="loadBtn">Load</button>
+    </div>
+
+    <div id="maChart"></div>
+
+    <script>
+      const chart = echarts.init(document.getElementById('maChart'));
+
+      async function loadMA() {
+        const vehicleClass = document.getElementById('vehicleClass').value;
+        const window = document.getElementById('window').value;
+        const xaxis = document.getElementById('xaxis').value;
+        const start = document.getElementById('startYear').value;
+        const end = document.getElementById('endYear').value;
+
+        const qs = new URLSearchParams();
+        if (vehicleClass) qs.set('vehicle_class', vehicleClass);
+        if (window) qs.set('window', window);
+        if (xaxis) qs.set('x_axis_mode', xaxis);
+        if (start) qs.set('start_year', start);
+        if (end) qs.set('end_year', end);
+
+        const url = `/premium?${qs.toString()}`;
+        const res = await fetch(url);
+        if (!res.ok) {
+          const txt = await res.text();
+          chart.clear();
+          chart.setOption({ title: { text: 'Error loading data' } });
+          console.error('Error', res.status, txt);
+          return;
+        }
+
+        const json = await res.json();
+        const labels = json.data.map(d => d.x_label);
+        const premium = json.data.map(d => d.premium);
+        const moving = json.data.map(d => d.moving_avg === null ? null : d.moving_avg);
+
+        chart.setOption({
+          tooltip: { trigger: 'axis' },
+          legend: { data: ['Premium', 'Moving Avg'] },
+          xAxis: { type: 'category', data: labels },
+          yAxis: [{ type: 'value', name: 'Premium (SGD)' }],
+          series: [
+            // Raw premiums as a faint dashed line with small markers
+            {
+              name: 'Premium',
+              type: 'line',
+              data: premium,
+              smooth: false,
+              showSymbol: true,
+              symbol: 'circle',
+              symbolSize: 6,
+              lineStyle: { type: 'dashed', width: 1, opacity: 0.5 },
+              itemStyle: { color: '#5470C6', opacity: 0.6 }
+            },
+
+            // Moving average as a bold solid line with larger markers
+            {
+              name: 'Moving Avg',
+              type: 'line',
+              data: moving,
+              smooth: true,
+              showSymbol: true,
+              symbol: 'circle',
+              symbolSize: 8,
+              lineStyle: { type: 'solid', width: 2.5 },
+              itemStyle: { color: '#EE6666' }
+            }
+          ]
+        });
+      }
+
+      document.getElementById('loadBtn').addEventListener('click', loadMA);
+      window.addEventListener('load', loadMA);
+    </script>
+
+  </body>
+</html>

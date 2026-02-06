@@ -1,0 +1,125 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>COE Seasonality</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+      crossorigin="anonymous"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <script src="https://cdn.jsdelivr.net/npm/echarts@6.0.0/dist/echarts.min.js"></script>
+    <style>
+      body {
+        font-family: "Space Grotesk", system-ui, sans-serif;
+        background: radial-gradient(circle at top, #f4f7ff, #ffffff 55%);
+      }
+      #chart {
+        width: 100%;
+        height: 420px;
+      }
+      .page-header {
+        letter-spacing: -0.5px;
+      }
+    </style>
+  </head>
+  <body class="py-4">
+    <div class="container">
+      <div class="mb-4">
+        <h1 class="page-header fw-bold">COE Seasonality Explorer</h1>
+        <p class="text-muted mb-0">
+          Compare monthly premium and quota patterns by vehicle category and time range.
+        </p>
+      </div>
+      <p>
+        <a href="/static/premium.html">View Premium Prices</a> |
+        <a href="/static/analysis.html">View Analysis</a>
+      </p>
+
+      <div class="card shadow-sm border-0 mb-4">
+        <div class="card-body">
+          <div class="row g-3 align-items-end">
+            <div class="col-12 col-md-3">
+              <label class="form-label">Vehicle Class</label>
+              <select id="vehicleClass" class="form-select">
+                <option>Category A</option>
+                <option>Category B</option>
+                <option>Category C</option>
+                <option>Category D</option>
+              </select>
+            </div>
+            <div class="col-6 col-md-2">
+              <label class="form-label">Start Year</label>
+              <input id="startYear" class="form-control" type="number" value="2010" />
+            </div>
+            <div class="col-6 col-md-2">
+              <label class="form-label">End Year</label>
+              <input id="endYear" class="form-control" type="number" value="2019" />
+            </div>
+            <div class="col-12 col-md-3">
+              <label class="form-label">Aggregation</label>
+              <select id="aggregation" class="form-select">
+                <option value="mean">Mean</option>
+                <option value="median">Median</option>
+              </select>
+            </div>
+            <div class="col-12 col-md-2 d-grid">
+              <button id="loadBtn" class="btn btn-primary">Load</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card shadow-sm border-0">
+        <div class="card-body">
+          <div id="chart"></div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const chart = echarts.init(document.getElementById("chart"));
+
+      async function loadData() {
+        const vehicleClass = document.getElementById("vehicleClass").value;
+        const startYear = document.getElementById("startYear").value;
+        const endYear = document.getElementById("endYear").value;
+        const aggregation = document.getElementById("aggregation").value;
+
+        const url = `/seasonality?vehicle_class=${encodeURIComponent(vehicleClass)}&start_year=${startYear}&end_year=${endYear}&aggregation=${aggregation}`;
+        const res = await fetch(url);
+        const json = await res.json();
+
+        const months = json.data.map(d => d.month_name);
+        const quota = json.data.map(d => d.quota);
+        const premium = json.data.map(d => d.premium);
+
+        chart.setOption({
+          tooltip: { trigger: "axis" },
+          legend: { data: ["Quota", "Premium"] },
+          xAxis: { type: "category", data: months },
+          yAxis: [
+            { type: "value", name: "Quota" },
+            { type: "value", name: "Premium" }
+          ],
+          series: [
+            { name: "Quota", type: "bar", data: quota },
+            { name: "Premium", type: "line", yAxisIndex: 1, data: premium }
+          ]
+        });
+      }
+
+      document.getElementById("loadBtn").addEventListener("click", loadData);
+      loadData();
+    </script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"
+      integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI"
+      crossorigin="anonymous"
+    ></script>
+  </body>
+</html>
