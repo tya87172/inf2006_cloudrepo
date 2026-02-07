@@ -21,3 +21,6 @@ jobs:
           script: |
             cd /home/ec2-user/project
             git pull origin main
+            chmod +x deploy.sh
+            ./deploy.sh
+"@ | Out-File -FilePath ".github\workflows\deploy.yml" -Encoding UTF8

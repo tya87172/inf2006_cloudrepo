@@ -1,0 +1,17 @@
+@"
+[Unit]
+Description=COE Analytics FastAPI Application
+After=network.target
+
+[Service]
+Type=simple
+User=ec2-user
+WorkingDirectory=/home/ec2-user/project
+ExecStart=/usr/bin/python3 -m uvicorn backend.main:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=10
+Environment="PYTHONPATH=/home/ec2-user/project"
+
+[Install]
+WantedBy=multi-user.target
+"@ | Out-File -FilePath "coe-analytics.service" -Encoding UTF8
