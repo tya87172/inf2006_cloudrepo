@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import sqlite3
+import mysql.connector
 from pathlib import Path
 from typing import Literal
 
@@ -12,9 +12,19 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 BACKEND_DIR = Path(__file__).resolve().parent
-DB_PATH = BACKEND_DIR / "db" / "coe.db"
 FRONTEND_DIST_DIR = BACKEND_DIR.parent / "frontend" / "dist"
 FRONTEND_ASSETS_DIR = FRONTEND_DIST_DIR / "assets"
+
+RDS_CONFIG = {
+    'host': 'database-1.cbk24k08ex7p.us-east-1.rds.amazonaws.com',
+    'user': 'admin',
+    'password': 'Test246!',
+    'database': 'coe_analytics',
+    'port': 3306
+}
+
+def get_db_connection():
+    return mysql.connector.connect(**RDS_CONFIG)
 
 app = FastAPI(title="COE Analytics API")
 
@@ -22,7 +32,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
     allow_credentials=True,
-    allow_methods=["*"] ,
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
@@ -30,20 +40,17 @@ if FRONTEND_ASSETS_DIR.exists():
     app.mount("/assets", StaticFiles(directory=FRONTEND_ASSETS_DIR), name="assets")
 
 
-def load_seasonality_from_db(db_path, vehicle_class, start_year, end_year, aggregation):
-    if not db_path.exists():
-        raise FileNotFoundError(f"Database file not found at {db_path}")
-
+def load_seasonality_from_db(vehicle_class, start_year, end_year, aggregation):
     query = """
-          SELECT month_dt, \
-                 quota, \
+          SELECT month_dt, 
+                 quota, 
                  premium
           FROM coe_bids
-          WHERE vehicle_class = ?
-            AND CAST(strftime('%Y', month_dt) AS INTEGER) BETWEEN ? AND ? \
+          WHERE vehicle_class = %s
+            AND YEAR(month_dt) BETWEEN %s AND %s
           """
 
-    with sqlite3.connect(db_path) as conn:
+    with get_db_connection() as conn:
         df = pd.read_sql_query(
             query, conn, params=(vehicle_class, start_year, end_year)
         )
@@ -83,12 +90,9 @@ def get_seasonality(vehicle_class, start_year, end_year, aggregation):
     if end_year < start_year:
         raise HTTPException(status_code=400, detail="end_year must be >= start_year")
 
-    try:
-        seasonal_df = load_seasonality_from_db(
-            DB_PATH, vehicle_class, start_year, end_year, aggregation
-        )
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    seasonal_df = load_seasonality_from_db(
+        vehicle_class, start_year, end_year, aggregation
+    )
 
     if seasonal_df.empty:
         return {"data": [], "count": 0}
@@ -107,15 +111,15 @@ def get_analysis_data(
     where_clauses = []
 
     if vehicle_class and vehicle_class.upper() != "ALL":
-        where_clauses.append("vehicle_class = ?")
+        where_clauses.append("vehicle_class = %s")
         params.append(vehicle_class)
 
     if start_year is not None:
-        where_clauses.append("CAST(strftime('%Y', month_dt) AS INTEGER) >= ?")
+        where_clauses.append("YEAR(month_dt) >= %s")
         params.append(start_year)
 
     if end_year is not None:
-        where_clauses.append("CAST(strftime('%Y', month_dt) AS INTEGER) <= ?")
+        where_clauses.append("YEAR(month_dt) <= %s")
         params.append(end_year)
 
     where = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
@@ -128,7 +132,7 @@ def get_analysis_data(
     """
     params = tuple(params)
 
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_db_connection() as conn:
         df = pd.read_sql_query(query, conn, params=params)
 
     if df.empty:
@@ -161,15 +165,15 @@ def get_premium_analysis(
     where_clauses = []
 
     if vehicle_class and vehicle_class.upper() != "ALL":
-        where_clauses.append("vehicle_class = ?")
+        where_clauses.append("vehicle_class = %s")
         params.append(vehicle_class)
 
     if start_year is not None:
-        where_clauses.append("CAST(strftime('%Y', month_dt) AS INTEGER) >= ?")
+        where_clauses.append("YEAR(month_dt) >= %s")
         params.append(start_year)
 
     if end_year is not None:
-        where_clauses.append("CAST(strftime('%Y', month_dt) AS INTEGER) <= ?")
+        where_clauses.append("YEAR(month_dt) <= %s")
         params.append(end_year)
 
     where = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
@@ -182,7 +186,7 @@ def get_premium_analysis(
     """
     params = tuple(params)
 
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_db_connection() as conn:
         df = pd.read_sql_query(query, conn, params=params)
 
     if df.empty:
